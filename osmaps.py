@@ -41,6 +41,8 @@ SCRIPT_DIR = os.path.abspath(
     )
 )
 
+# Use a single shared requests.Session (for connection pooling) - see proxy()
+SESSION = requests.Session()
 
 LayerParam = namedtuple('LayerParam', 'scale w h layers'.split())
 
@@ -341,33 +343,62 @@ def proxy():
         )
     )
 
-    try:
-        os_response = requests.get(
-            os_url,
-            headers=headers
-        )
-
-    except requests.exceptions.RequestException as ex:
-        LOGGER.error(
-            'Exception requesting {}: {}'.format(
+    for retry in (True, True, False):
+        try:
+            os_response = SESSION.get(
                 os_url,
-                ex
+                headers=headers
             )
-        )
-        content = PNGS['error'][image_size]
-        return flask.Response(
-            response=content,
-            headers={
-                'Content-Type': 'image/png',
-                'Content-Length': len(content)
-            }
-        )
+
+            # Exit the loop if the status code is a non-retryable one
+            if os_response.status_code in (
+                HTTPStatus.OK,
+                HTTPStatus.NOT_FOUND,
+                HTTPStatus.INTERNAL_SERVER_ERROR
+            ):
+                break
+
+            # If the status code is retryable, loop
+            LOGGER.warning(
+                'Retrying after response with status code {}'.format(os_response.status_code)
+            )
+
+        except requests.exceptions.RequestException as ex:
+            # Retryable exceptions
+            if isinstance(
+                    ex,
+                    requests.exceptions.ReadTimeout
+            ) and retry:
+                LOGGER.warning(
+                    'Retrying after exception {}'.format(ex)
+                )
+                continue
+
+            LOGGER.error(
+                'Exception requesting {}: {}'.format(
+                    os_url,
+                    ex
+                )
+            )
+            content = PNGS['error'][image_size]
+            return flask.Response(
+                response=content,
+                headers={
+                    'Content-Type': 'image/png',
+                    'Content-Length': len(content)
+                }
+            )
 
     # Convert the requests.Response headers dict to one
     # usable by flask.Response
-    os_headers = dict(os_response.headers.items())
+    os_headers = {
+        key.lower(): value
+        for key, value in os_response.headers.items()
+    }
 
     if os_response.status_code == HTTPStatus.OK:
+        os_headers.pop('expires')
+        os_headers['cache-control'] = 'max-age=120'
         response = flask.Response(
             response=os_response.content,
             headers=os_headers
