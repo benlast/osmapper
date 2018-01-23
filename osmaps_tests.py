@@ -6,8 +6,7 @@ import osmaps
 
 class ProjectionTests(TestCase):
 
-    def test_ll_to_grid\
-                    (self):
+    def test_ll_to_grid(self):
         for lat, lon, east, north in [
             (
                 51.44533267,

@@ -12,17 +12,19 @@ RUN pip install virtualenv
 USER osmaps
 WORKDIR /osmaps
 
-COPY requirements.txt  liblonlat_bng.so ./
+COPY requirements.txt  liblonlat_bng.so.bz2 ./
 RUN virtualenv /venv && \
     . /venv/bin/activate && \
     pip install --no-cache-dir -r /osmaps/requirements.txt
 
 # Patch convertbng
-RUN find /venv -name 'liblonlat*.so' -exec cp -v liblonlat_bng.so {} \;
-
 # /venv/lib/python3.6/site-packages/convertbng/.libs/liblonlat_bng-783571af.so
+RUN bunzip2 liblonlat_bng.so.bz2 && \
+    find /venv -name 'liblonlat*.so' -exec cp -v liblonlat_bng.so {} \; && \
+    rm -f liblonlat_bng.so
 
-COPY . ./
+COPY *.png ./
+COPY *.py ./
 
 CMD /venv/bin/gunicorn --config gunicorn_config.py --access-logfile - --log-file - osmaps:APP
 # CMD /venv/bin/python3.6 ./osmaps.py
